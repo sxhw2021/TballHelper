@@ -16,4 +16,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "TballHelper"
 include(":app")
-include(":Billiards_SDK")

@@ -4,7 +4,6 @@ import android.app.ActivityManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.view.View
@@ -14,14 +13,11 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.isVisible
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import com.tballhelper.app.databinding.ActivityMainBinding
 import com.tballhelper.app.data.GameConfig
 import com.tballhelper.app.data.TemplateManager
 import com.tballhelper.app.permission.PermissionHelper
-import java.io.File
 
 class MainActivity : AppCompatActivity() {
 

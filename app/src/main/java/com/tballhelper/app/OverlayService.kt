@@ -8,22 +8,20 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
-import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
-import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.view.View
 import android.view.WindowManager
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import com.billiards.sdk.BilliardsSDK
 import com.tballhelper.app.data.GameConfig
 import com.tballhelper.app.data.TemplateManager
 import com.tballhelper.app.overlay.OverlayView
+import com.tballhelper.app.sdk.BilliardsSDK
 import kotlinx.coroutines.*
 
 class OverlayService : Service() {
@@ -144,10 +142,10 @@ class OverlayService : Service() {
             "ScreenCapture",
             screenWidth, screenHeight,
             480,
-            ImageReader::class.java.classLoader?.let { imageReader?.surface?.display?.refreshRate?.toInt() ?: 60 },
+            60,
             imageReader?.surface,
             null,
-            captureHandler
+            null
         )
 
         captureHandler = Handler(Looper.getMainLooper())
