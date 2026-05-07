@@ -8,6 +8,10 @@ on:
   release:
     types: [ published ]
 
+env:
+  ANDROID_HOME: /home/runner/android-sdk
+  ANDROID_SDK_ROOT: /home/runner/android-sdk
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,9 +28,18 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '11076700'
+          packages: |
+            platform-tools
+            platforms;android-34
+            build-tools;34.0.0
+            ndk;25.2.9519653
+            cmake;3.22.1
+          accept-android-sdk-licenses: true
 
       - name: Cache Gradle packages
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
@@ -35,36 +48,24 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: Cache Android SDK
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/android-sdk/ndk
-            ~/android-sdk/cmake
-          key: ${{ runner.os }}-android-ndk-${{ hashFiles('.github/workflows/android.yml') }}
-          restore-keys: |
-            ${{ runner.os }}-android-ndk-
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Create local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "ndk.dir=$ANDROID_HOME/ndk/25.2.9519653" >> local.properties
 
       - name: Download OpenCV Android SDK
         run: |
           mkdir -p OpenCV-android-sdk
           cd OpenCV-android-sdk
-          wget -q https://github.com/nicehero/opencv/releases/download/4.6.0/opencv-4.6.0-android-sdk.zip -O opencv.zip
+          curl -sL https://sourceforge.net/projects/opencvlibrary/files/4.6.0/opencv-4.6.0-android-sdk.zip/download -o opencv.zip || wget -q https://github.com/nicehero/opencv/releases/download/4.6.0/opencv-4.6.0-android-sdk.zip -O opencv.zip
           unzip -q opencv.zip
           rm opencv.zip
           ls -la
 
       - name: Build debug APK
         run: |
-          ./gradlew assembleDebug --no-daemon --warning-mode=none 2>&1 || true
-
-      - name: Build with NDK
-        run: |
-          export ANDROID_NDK_HOME=$HOME/android-sdk/ndk/25.2.9519653
-          ./gradlew assembleDebug --no-daemon 2>&1 | tail -50
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon 2>&1 | tail -100
 
       - name: Upload APK
         if: success()
@@ -73,6 +74,11 @@ jobs:
           name: debug-apk
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 7
+
+      - name: Show build logs on failure
+        if: failure()
+        run: |
+          cat app/build/outputs/logs/*.log 2>/dev/null || echo "No build logs available"
 
   release:
     needs: build
@@ -91,14 +97,27 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '11076700'
+          packages: |
+            platform-tools
+            platforms;android-34
+            build-tools;34.0.0
+            ndk;25.2.9519653
+            cmake;3.22.1
 
       - name: Download OpenCV Android SDK
         run: |
           mkdir -p OpenCV-android-sdk
           cd OpenCV-android-sdk
-          wget -q https://github.com/nicehero/opencv/releases/download/4.6.0/opencv-4.6.0-android-sdk.zip -O opencv.zip
+          curl -sL https://sourceforge.net/projects/opencvlibrary/files/4.6.0/opencv-4.6.0-android-sdk.zip/download -o opencv.zip || wget -q https://github.com/nicehero/opencv/releases/download/4.6.0/opencv-4.6.0-android-sdk.zip -O opencv.zip
           unzip -q opencv.zip
           rm opencv.zip
+
+      - name: Create local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "ndk.dir=$ANDROID_HOME/ndk/25.2.9519653" >> local.properties
 
       - name: Build release APK
         env:
@@ -107,7 +126,10 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo $KEYSTORE_BASE64 | base64 -d > app/release.keystore
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
+          fi
+          chmod +x gradlew
           ./gradlew assembleRelease --no-daemon 2>&1 | tail -30
 
       - name: Upload release APK
