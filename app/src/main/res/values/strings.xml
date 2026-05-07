@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">台球辅助</string>
+    <string name="btn_start_service">启动服务</string>
+    <string name="btn_stop_service">停止服务</string>
+    <string name="btn_init_service">初始化服务</string>
+    <string name="btn_capture_template">截取模板</string>
+    <string name="btn_manage_templates">管理模板</string>
+    <string name="hint_game_name">游戏名称</string>
+    <string name="btn_save">保存</string>
+    <string name="btn_cancel">取消</string>
+    <string name="msg_overlay_permission_required">需要悬浮窗权限才能显示辅助线</string>
+    <string name="msg_capture_permission_required">需要截屏权限</string>
+    <string name="msg_service_started">服务已启动</string>
+    <string name="msg_service_stopped">服务已停止</string>
+    <string name="msg_template_saved">模板已保存</string>
+    <string name="msg_template_deleted">模板已删除</string>
+    <string name="notification_channel_name">台球辅助服务</string>
+    <string name="notification_channel_desc">用于显示台球辅助悬浮窗</string>
+    <string name="notification_title">台球辅助运行中</string>
+    <string name="notification_text">点击查看或停止服务</string>
+    <string name="dialog_select_game">选择游戏</string>
+    <string name="dialog_add_game">添加游戏</string>
+    <string name="dialog_confirm_delete">确认删除</string>
+    <string name="dialog_delete_message">确定要删除这个模板吗？</string>
+</resources>
