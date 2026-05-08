@@ -6,12 +6,10 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Bundle
-import android.provider.Settings
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.textfield.TextInputEditText
@@ -28,14 +26,18 @@ class MainActivity : AppCompatActivity() {
     private var gameList: MutableList<GameConfig> = mutableListOf()
     private var currentGameIndex = 0
 
-    private val overlayPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (Settings.canDrawOverlays(this)) {
-            requestMediaProjectionPermission()
-        } else {
-            Toast.makeText(this, "需要悬浮窗权限", Toast.LENGTH_SHORT).show()
-        }
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        templateManager = TemplateManager(this)
+        permissionHelper = PermissionHelper(this)
+
+        loadGames()
+        setupViews()
+        updateServiceStatus()
+    }
     }
 
     private val mediaProjectionLauncher = registerForActivityResult(
@@ -106,20 +108,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onStartServiceClicked() {
-        if (!Settings.canDrawOverlays(this)) {
-            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
-            overlayPermissionLauncher.launch(intent)
+        if (!permissionHelper.hasOverlayPermission()) {
+            permissionHelper.requestOverlayPermission { granted ->
+                if (granted) {
+                    startOverlayService()
+                } else {
+                    Toast.makeText(this, "请先授予悬浮窗权限", Toast.LENGTH_SHORT).show()
+                }
+            }
         } else {
-            requestMediaProjectionPermission()
-        }
-    }
-
-    private fun requestMediaProjectionPermission() {
-        val intent = Intent("android.media.action.VIDEO_CAPTURE")
-        if (intent.resolveActivity(packageManager) != null) {
-            mediaProjectionLauncher.launch(intent)
-        } else {
-            Toast.makeText(this, "无法获取截屏权限", Toast.LENGTH_SHORT).show()
+            startOverlayService()
         }
     }
 
@@ -132,11 +130,6 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, OverlayService::class.java)
         startForegroundService(intent)
         updateServiceStatus()
-    }
-
-    private fun saveMediaProjectionData(resultCode: Int, data: Intent) {
-        val prefs = getSharedPreferences("tball_prefs", Context.MODE_PRIVATE)
-        prefs.edit().putInt("projection_code", resultCode).apply()
     }
 
     private fun updateServiceStatus() {
