@@ -6,10 +6,12 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.textfield.TextInputEditText
@@ -25,20 +27,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var permissionHelper: PermissionHelper
     private var gameList: MutableList<GameConfig> = mutableListOf()
     private var currentGameIndex = 0
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        templateManager = TemplateManager(this)
-        permissionHelper = PermissionHelper(this)
-
-        loadGames()
-        setupViews()
-        updateServiceStatus()
-    }
-    }
 
     private val mediaProjectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -184,7 +172,7 @@ class MainActivity : AppCompatActivity() {
 
         AlertDialog.Builder(this)
             .setTitle(R.string.btn_manage_templates)
-            .setItems(names) { _, which ->
+            .setItems(names) { _: android.content.DialogInterface, which: Int ->
                 AlertDialog.Builder(this)
                     .setTitle(R.string.dialog_confirm_delete)
                     .setMessage(R.string.dialog_delete_message)
@@ -210,5 +198,21 @@ class MainActivity : AppCompatActivity() {
                 binding.ivTemplatePreview.setImageBitmap(null)
             }
         }
+    }
+
+    private fun saveMediaProjectionData(resultCode: Int, data: android.content.Intent) {
+        getSharedPreferences("tball_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putInt("projection_result_code", resultCode)
+            .putString("projection_data", data.toUri(0))
+            .apply()
+    }
+
+    private fun getMediaProjectionData(): Pair<Int, android.content.Intent>? {
+        val prefs = getSharedPreferences("tball_prefs", Context.MODE_PRIVATE)
+        val resultCode = prefs.getInt("projection_result_code", -1)
+        val dataUri = prefs.getString("projection_data", null)
+        if (resultCode == -1 || dataUri == null) return null
+        return Pair(resultCode, android.content.Intent.parseUri(dataUri, 0))
     }
 }
