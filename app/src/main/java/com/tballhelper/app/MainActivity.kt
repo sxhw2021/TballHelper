@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -27,11 +28,24 @@ class MainActivity : AppCompatActivity() {
     private var gameList: MutableList<GameConfig> = mutableListOf()
     private var currentGameIndex = 0
 
-    private val startServiceLauncher = registerForActivityResult(
+    private val overlayPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == RESULT_OK) {
+        if (Settings.canDrawOverlays(this)) {
+            requestMediaProjectionPermission()
+        } else {
+            Toast.makeText(this, "需要悬浮窗权限", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private val mediaProjectionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK && result.data != null) {
+            saveMediaProjectionData(result.resultCode, result.data!!)
             startOverlayService()
+        } else {
+            Toast.makeText(this, "需要截屏权限", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -92,19 +106,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onStartServiceClicked() {
-        permissionHelper.requestOverlayPermission { granted ->
-            if (granted) {
-                permissionHelper.requestMediaProjection { result ->
-                    if (result.resultCode == RESULT_OK && result.data != null) {
-                        saveMediaProjectionData(result.resultCode, result.data!!)
-                        startOverlayService()
-                    } else {
-                        Toast.makeText(this, "需要截屏权限才能运行", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } else {
-                Toast.makeText(this, "需要悬浮窗权限", Toast.LENGTH_SHORT).show()
-            }
+        if (!Settings.canDrawOverlays(this)) {
+            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+            overlayPermissionLauncher.launch(intent)
+        } else {
+            requestMediaProjectionPermission()
+        }
+    }
+
+    private fun requestMediaProjectionPermission() {
+        val intent = Intent("android.media.action.VIDEO_CAPTURE")
+        if (intent.resolveActivity(packageManager) != null) {
+            mediaProjectionLauncher.launch(intent)
+        } else {
+            Toast.makeText(this, "无法获取截屏权限", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -119,7 +134,7 @@ class MainActivity : AppCompatActivity() {
         updateServiceStatus()
     }
 
-    private fun saveMediaProjectionData(resultCode: Int, data: android.content.Intent) {
+    private fun saveMediaProjectionData(resultCode: Int, data: Intent) {
         val prefs = getSharedPreferences("tball_prefs", Context.MODE_PRIVATE)
         prefs.edit().putInt("projection_code", resultCode).apply()
     }
@@ -157,23 +172,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun captureTemplate() {
-        permissionHelper.requestMediaProjection { result ->
-            if (result.resultCode == RESULT_OK && result.data != null) {
-                val game = gameList[currentGameIndex]
-                showTemplateCaptureOverlay(result.resultCode, result.data!!, game)
-            }
+        if (!Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, "请先授予悬浮窗权限", Toast.LENGTH_SHORT).show()
+            return
         }
-    }
-
-    private fun showTemplateCaptureOverlay(resultCode: Int, data: android.content.Intent, game: GameConfig) {
-        val intent = Intent(this, OverlayService::class.java).apply {
-            putExtra("mode", "capture_template")
-            putExtra("game_name", game.name)
-            putExtra("game_id", game.id)
-            putExtra("projection_code", resultCode)
-        }
-        startForegroundService(intent)
-        Toast.makeText(this, "请在游戏画面中框选瞄准圆环", Toast.LENGTH_LONG).show()
+        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+        Toast.makeText(this, "请在设置中授予截屏权限", Toast.LENGTH_LONG).show()
     }
 
     private fun showTemplateManagementDialog() {
