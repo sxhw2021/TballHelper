@@ -51,16 +51,21 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        templateManager = TemplateManager(this)
-        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        billiardsSDK = BilliardsSDK()
+        try {
+            windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            templateManager = TemplateManager(this)
+            mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            billiardsSDK = BilliardsSDK()
 
-        createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification())
+            createNotificationChannel()
+            startForeground(NOTIFICATION_ID, createNotification())
 
-        overlayView = OverlayView(this)
-        setupOverlayWindow()
+            overlayView = OverlayView(this)
+            setupOverlayWindow()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            stopSelf()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

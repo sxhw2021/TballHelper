@@ -5,6 +5,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.hardware.display.DisplayManager
+import android.hardware.display.MediaProjectionManager
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
@@ -27,15 +29,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var permissionHelper: PermissionHelper
     private var gameList: MutableList<GameConfig> = mutableListOf()
     private var currentGameIndex = 0
+    private var savedProjectionResultCode = -1
+    private var savedProjectionData: Intent? = null
 
     private val mediaProjectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK && result.data != null) {
+            savedProjectionResultCode = result.resultCode
+            savedProjectionData = result.data
             saveMediaProjectionData(result.resultCode, result.data!!)
             startOverlayService()
         } else {
-            Toast.makeText(this, "需要截屏权限", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "需要截屏权限才能运行", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -47,9 +53,23 @@ class MainActivity : AppCompatActivity() {
         templateManager = TemplateManager(this)
         permissionHelper = PermissionHelper(this)
 
+        loadSavedProjectionData()
         loadGames()
         setupViews()
         updateServiceStatus()
+    }
+
+    private fun loadSavedProjectionData() {
+        val prefs = getSharedPreferences("tball_prefs", Context.MODE_PRIVATE)
+        savedProjectionResultCode = prefs.getInt("projection_result_code", -1)
+        val dataUri = prefs.getString("projection_data", null)
+        if (dataUri != null) {
+            try {
+                savedProjectionData = Intent.parseUri(dataUri, 0)
+            } catch (e: Exception) {
+                savedProjectionData = null
+            }
+        }
     }
 
     private fun loadGames() {
@@ -99,14 +119,23 @@ class MainActivity : AppCompatActivity() {
         if (!permissionHelper.hasOverlayPermission()) {
             permissionHelper.requestOverlayPermission { granted ->
                 if (granted) {
-                    startOverlayService()
+                    requestMediaProjection()
                 } else {
                     Toast.makeText(this, "请先授予悬浮窗权限", Toast.LENGTH_SHORT).show()
                 }
             }
         } else {
-            startOverlayService()
+            if (savedProjectionResultCode != -1 && savedProjectionData != null) {
+                startOverlayService()
+            } else {
+                requestMediaProjection()
+            }
         }
+    }
+
+    private fun requestMediaProjection() {
+        val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        mediaProjectionLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
     }
 
     private fun onStopServiceClicked() {
@@ -115,7 +144,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startOverlayService() {
-        val intent = Intent(this, OverlayService::class.java)
+        val intent = Intent(this, OverlayService::class.java).apply {
+            putExtra("projection_code", savedProjectionResultCode)
+            putExtra("projection_data", savedProjectionData)
+        }
         startForegroundService(intent)
         updateServiceStatus()
     }
@@ -200,19 +232,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun saveMediaProjectionData(resultCode: Int, data: android.content.Intent) {
+    private fun saveMediaProjectionData(resultCode: Int, data: Intent) {
         getSharedPreferences("tball_prefs", Context.MODE_PRIVATE)
             .edit()
             .putInt("projection_result_code", resultCode)
             .putString("projection_data", data.toUri(0))
             .apply()
-    }
-
-    private fun getMediaProjectionData(): Pair<Int, android.content.Intent>? {
-        val prefs = getSharedPreferences("tball_prefs", Context.MODE_PRIVATE)
-        val resultCode = prefs.getInt("projection_result_code", -1)
-        val dataUri = prefs.getString("projection_data", null)
-        if (resultCode == -1 || dataUri == null) return null
-        return Pair(resultCode, android.content.Intent.parseUri(dataUri, 0))
     }
 }
