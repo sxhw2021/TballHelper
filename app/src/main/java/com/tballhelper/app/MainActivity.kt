@@ -5,6 +5,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.graphics.Bitmap
+import android.net.Uri
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.provider.Settings
@@ -41,6 +43,30 @@ class MainActivity : AppCompatActivity() {
             startOverlayService()
         } else {
             Toast.makeText(this, "需要截屏权限才能运行", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private val imagePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { selectedUri ->
+            try {
+                val inputStream = contentResolver.openInputStream(selectedUri)
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                inputStream?.close()
+
+                if (bitmap != null) {
+                    val currentGame = gameList.getOrNull(currentGameIndex)
+                    val templateId = currentGame?.templateId ?: "default_template"
+                    templateManager.saveTemplate(templateId, bitmap)
+                    Toast.makeText(this, "模板已保存", Toast.LENGTH_SHORT).show()
+                    updateTemplatePreview()
+                } else {
+                    Toast.makeText(this, "无法读取图片", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this, "保存模板失败: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -184,12 +210,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun captureTemplate() {
-        if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, "请先授予悬浮窗权限", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
-        Toast.makeText(this, "请在设置中授予截屏权限", Toast.LENGTH_LONG).show()
+        imagePickerLauncher.launch("image/*")
     }
 
     private fun showTemplateManagementDialog() {
