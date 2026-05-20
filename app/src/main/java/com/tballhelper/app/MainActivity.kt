@@ -191,49 +191,112 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAddGameDialog() {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_add_game, null)
-        val etGameName = dialogView.findViewById<TextInputEditText>(R.id.etGameName)
+        try {
+            val dialogView = layoutInflater.inflate(R.layout.dialog_add_game, null)
+            val etGameName = dialogView.findViewById<TextInputEditText>(R.id.etGameName)
+
+            AlertDialog.Builder(this)
+                .setTitle(R.string.dialog_add_game)
+                .setView(dialogView)
+                .setPositiveButton(R.string.btn_save) { _, _ ->
+                    try {
+                        val name = etGameName.text?.toString()?.trim() ?: "新游戏"
+                        if (name.isEmpty()) {
+                            Toast.makeText(this, "游戏名称不能为空", Toast.LENGTH_SHORT).show()
+                            return@setPositiveButton
+                        }
+                        val config = GameConfig(name, 1080, 2376, "template_$name")
+                        gameList.add(config)
+                        templateManager.saveGames(gameList)
+                        refreshGameSpinner()
+                        binding.spinnerGame.setSelection(gameList.size - 1)
+                    } catch (e: Exception) {
+                        Toast.makeText(this, "添加游戏失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setNegativeButton(R.string.btn_cancel, null)
+                .show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "打开对话框失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun refreshGameSpinner() {
+        val gameNames = gameList.map { it.name }
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, gameNames)
+        binding.spinnerGame.adapter = adapter
+    }
+
+    private fun captureTemplate() {
+        val templates = templateManager.listTemplates()
+        val templateNames = templates.map { it.name }.toMutableList()
+        templateNames.add(0, "从相册选择新模板")
+
+        val currentGame = gameList.getOrNull(currentGameIndex)
+        val currentTemplateId = currentGame?.templateId ?: "default_template"
 
         AlertDialog.Builder(this)
-            .setTitle(R.string.dialog_add_game)
-            .setView(dialogView)
-            .setPositiveButton(R.string.btn_save) { _, _ ->
-                val name = etGameName.text?.toString() ?: "新游戏"
-                val config = GameConfig(name, 1080, 2376, "template_$name")
-                gameList.add(config)
-                templateManager.saveGames(gameList)
-                loadGames()
-                binding.spinnerGame.setSelection(gameList.size - 1)
+            .setTitle("选择模板")
+            .setItems(templateNames.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    imagePickerLauncher.launch("image/*")
+                } else {
+                    val selectedTemplate = templates[which - 1]
+                    currentGame?.let { game ->
+                        val updatedGame = GameConfig(
+                            game.name,
+                            game.screenWidth,
+                            game.screenHeight,
+                            selectedTemplate.id
+                        )
+                        gameList[currentGameIndex] = updatedGame
+                        templateManager.saveGames(gameList)
+                        updateTemplatePreview()
+                        Toast.makeText(this, "已选择模板: ${selectedTemplate.name}", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
             .setNegativeButton(R.string.btn_cancel, null)
             .show()
     }
 
-    private fun captureTemplate() {
-        imagePickerLauncher.launch("image/*")
-    }
-
     private fun showTemplateManagementDialog() {
         val templates = templateManager.listTemplates()
-        val names = templates.map { it.name }.toTypedArray()
+        val currentGame = gameList.getOrNull(currentGameIndex)
+        val currentTemplateId = currentGame?.templateId ?: ""
 
-        if (names.isEmpty()) {
-            Toast.makeText(this, "暂无模板", Toast.LENGTH_SHORT).show()
+        val options = mutableListOf<String>()
+        options.add("从相册添加新模板")
+        templates.forEach { template ->
+            val prefix = if (template.id == currentTemplateId) "✓ " else ""
+            options.add(prefix + template.name)
+        }
+
+        if (templates.isEmpty()) {
+            Toast.makeText(this, "暂无模板，请从相册添加", Toast.LENGTH_SHORT).show()
             return
         }
 
         AlertDialog.Builder(this)
-            .setTitle(R.string.btn_manage_templates)
-            .setItems(names) { _: android.content.DialogInterface, which: Int ->
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.dialog_confirm_delete)
-                    .setMessage(R.string.dialog_delete_message)
-                    .setPositiveButton(R.string.btn_save) { _, _ ->
-                        templateManager.deleteTemplate(templates[which].id)
-                        Toast.makeText(this, R.string.msg_template_deleted, Toast.LENGTH_SHORT).show()
+            .setTitle("模板管理 - 当前: ${currentGame?.name ?: "未选择"}")
+            .setItems(options.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    imagePickerLauncher.launch("image/*")
+                } else {
+                    val selectedTemplate = templates[which - 1]
+                    currentGame?.let { game ->
+                        val updatedGame = GameConfig(
+                            game.name,
+                            game.screenWidth,
+                            game.screenHeight,
+                            selectedTemplate.id
+                        )
+                        gameList[currentGameIndex] = updatedGame
+                        templateManager.saveGames(gameList)
+                        updateTemplatePreview()
+                        showTemplateManagementDialog()
                     }
-                    .setNegativeButton(R.string.btn_cancel, null)
-                    .show()
+                }
             }
             .setNegativeButton(R.string.btn_cancel, null)
             .show()
