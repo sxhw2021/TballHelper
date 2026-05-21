@@ -169,9 +169,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startOverlayService() {
+        val currentGame = gameList.getOrNull(currentGameIndex)
         val intent = Intent(this, OverlayService::class.java).apply {
             putExtra("projection_code", savedProjectionResultCode)
             putExtra("projection_data", savedProjectionData)
+            putExtra("game_index", currentGameIndex)
+            putExtra("game_template_id", currentGame?.templateId ?: "")
         }
         startForegroundService(intent)
         updateServiceStatus()

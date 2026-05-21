@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.PixelFormat
 import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
@@ -22,6 +23,7 @@ import com.tballhelper.app.data.GameConfig
 import com.tballhelper.app.data.TemplateManager
 import com.tballhelper.app.overlay.OverlayView
 import com.tballhelper.app.sdk.BilliardsSDK
+import java.io.File
 import kotlinx.coroutines.*
 
 class OverlayService : Service() {
@@ -79,11 +81,19 @@ class OverlayService : Service() {
                     screenHeight = it.getIntExtra("screen_height", 2376)
                 }
                 else -> {
-                    val game = templateManager.getCurrentGame()
+                    val gameIndex = it.getIntExtra("game_index", -1)
+                    val templateId = it.getStringExtra("game_template_id") ?: ""
+                    val games = templateManager.loadGames()
+                    val game = if (gameIndex in games.indices) games[gameIndex] else games.firstOrNull()
                     if (game != null) {
                         currentGame = game
                         screenWidth = game.screenWidth
                         screenHeight = game.screenHeight
+                    }
+                    if (templateId.isNotEmpty()) {
+                        loadTemplate(templateId)
+                    } else {
+                        game?.let { loadTemplate(it.templateId) }
                     }
                 }
             }
@@ -136,6 +146,16 @@ class OverlayService : Service() {
         windowManager.addView(overlayView, params)
     }
 
+    private fun loadTemplate(templateId: String) {
+        val templateFile = templateManager.getTemplateFile(templateId)
+        if (templateFile.exists()) {
+            val bitmap = BitmapFactory.decodeFile(templateFile.absolutePath)
+            if (bitmap != null) {
+                billiardsSDK.setTemplate(bitmap)
+            }
+        }
+    }
+
     private fun startCapture(resultCode: Int, data: Intent) {
         mediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data)
         imageReader = ImageReader.newInstance(
@@ -166,13 +186,34 @@ class OverlayService : Service() {
     private fun captureScreen() {
         val image = imageReader?.acquireLatestImage() ?: return
         try {
-            val plane = image.planes[0]
-            val buffer = plane.buffer
+            val planes = image.planes
+            if (planes.isEmpty()) return
+            val buffer = planes[0].buffer
+            val pixelStride = planes[0].pixelStride
+            val rowStride = planes[0].rowStride
             val bitmap = Bitmap.createBitmap(
                 screenWidth, screenHeight,
                 Bitmap.Config.ARGB_8888
             )
-            bitmap.copyPixelsFromBuffer(buffer)
+            if (rowStride == screenWidth * pixelStride) {
+                buffer.position(0)
+                bitmap.copyPixelsFromBuffer(buffer)
+            } else {
+                val src = ByteArray(buffer.remaining())
+                buffer.get(src)
+                val pixels = IntArray(screenWidth * screenHeight)
+                for (y in 0 until screenHeight) {
+                    for (x in 0 until screenWidth) {
+                        val srcIdx = y * rowStride + x * pixelStride
+                        val r = src[srcIdx].toInt() and 0xFF
+                        val g = src[srcIdx + 1].toInt() and 0xFF
+                        val b = src[srcIdx + 2].toInt() and 0xFF
+                        val a = if (srcIdx + 3 < src.size) (src[srcIdx + 3].toInt() and 0xFF) else 0xFF
+                        pixels[y * screenWidth + x] = a shl 24 or (r shl 16) or (g shl 8) or b
+                    }
+                }
+                bitmap.setPixels(pixels, 0, screenWidth, 0, 0, screenWidth, screenHeight)
+            }
             processScreenCapture(bitmap)
             bitmap.recycle()
         } finally {
