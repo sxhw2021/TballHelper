@@ -112,7 +112,7 @@ class BilliardsSDK {
                             }
                         }
                     }
-                    val whiteRatio = if (totalCount > 0) whiteCount.toFloat() / totalCount else 0f
+                    var whiteRatio = if (totalCount > 0) whiteCount.toFloat() / totalCount else 0f
                     if (whiteRatio > 0.6f) {
                         val yBelow = y + radius * 2
                         if (yBelow < h) {
