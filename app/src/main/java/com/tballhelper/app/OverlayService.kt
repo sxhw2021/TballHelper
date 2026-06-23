@@ -64,6 +64,11 @@ class OverlayService : Service() {
 
             overlayView = OverlayView(this)
             setupOverlayWindow()
+            overlayView.showTestPattern()
+            Handler(Looper.getMainLooper()).postDelayed({
+                overlayView.hideTestPattern()
+                overlayView.setStatus("等待屏幕捕获...")
+            }, 2000)
         } catch (e: Exception) {
             e.printStackTrace()
             stopSelf()
@@ -184,7 +189,11 @@ class OverlayService : Service() {
     }
 
     private fun captureScreen() {
-        val image = imageReader?.acquireLatestImage() ?: return
+        val image = imageReader?.acquireLatestImage()
+        if (image == null) {
+            overlayView.setStatus("等待屏幕数据...")
+            return
+        }
         try {
             val planes = image.planes
             if (planes.isEmpty()) return
@@ -195,16 +204,13 @@ class OverlayService : Service() {
                 screenWidth, screenHeight,
                 Bitmap.Config.ARGB_8888
             )
-            if (rowStride == screenWidth * pixelStride) {
-                buffer.position(0)
-                bitmap.copyPixelsFromBuffer(buffer)
-            } else {
-                val src = ByteArray(buffer.remaining())
-                buffer.get(src)
-                val pixels = IntArray(screenWidth * screenHeight)
-                for (y in 0 until screenHeight) {
-                    for (x in 0 until screenWidth) {
-                        val srcIdx = y * rowStride + x * pixelStride
+            val src = ByteArray(buffer.remaining())
+            buffer.get(src)
+            val pixels = IntArray(screenWidth * screenHeight)
+            for (y in 0 until screenHeight) {
+                for (x in 0 until screenWidth) {
+                    val srcIdx = y * rowStride + x * pixelStride
+                    if (srcIdx + 2 < src.size) {
                         val r = src[srcIdx].toInt() and 0xFF
                         val g = src[srcIdx + 1].toInt() and 0xFF
                         val b = src[srcIdx + 2].toInt() and 0xFF
@@ -212,8 +218,8 @@ class OverlayService : Service() {
                         pixels[y * screenWidth + x] = a shl 24 or (r shl 16) or (g shl 8) or b
                     }
                 }
-                bitmap.setPixels(pixels, 0, screenWidth, 0, 0, screenWidth, screenHeight)
             }
+            bitmap.setPixels(pixels, 0, screenWidth, 0, 0, screenWidth, screenHeight)
             processScreenCapture(bitmap)
             bitmap.recycle()
         } finally {

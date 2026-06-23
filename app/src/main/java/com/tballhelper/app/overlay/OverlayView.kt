@@ -1,7 +1,6 @@
 package com.tballhelper.app.overlay
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -25,6 +24,13 @@ class OverlayView(context: Context) : View(context) {
     }
 
     private val textPaint = Paint().apply {
+        color = Color.parseColor("#00FF00")
+        textSize = 48f
+        isAntiAlias = true
+        isFakeBoldText = true
+    }
+
+    private val statusPaint = Paint().apply {
         color = Color.parseColor("#FFFFFF")
         textSize = 36f
         isAntiAlias = true
@@ -50,9 +56,39 @@ class OverlayView(context: Context) : View(context) {
     private var predictionPaths: List<PredictionPath> = emptyList()
     private var templateCenter: PointF? = null
     private var aimPoint: PointF? = null
+    private var statusText: String? = "正在检测..."
+    private var showTestPattern = false
+
+    fun showTestPattern() {
+        showTestPattern = true
+        invalidate()
+    }
+
+    fun hideTestPattern() {
+        showTestPattern = false
+        invalidate()
+    }
+
+    fun setStatus(text: String?) {
+        statusText = text
+        invalidate()
+    }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+
+        if (showTestPattern) {
+            val cx = width / 2f
+            val cy = height / 2f
+            linePaint.color = Color.parseColor("#FF0000")
+            linePaint.strokeWidth = 6f
+            canvas.drawLine(cx - 100, cy, cx + 100, cy, linePaint)
+            canvas.drawLine(cx, cy - 100, cx, cy + 100, linePaint)
+            canvas.drawCircle(cx, cy, 50f, circlePaint)
+            textPaint.color = Color.parseColor("#FF0000")
+            canvas.drawText("Overlay Test", cx - 100, cy + 150, textPaint)
+            return
+        }
 
         predictionPaths.forEach { path ->
             linePaint.color = Color.parseColor("#0088FF")
@@ -81,6 +117,15 @@ class OverlayView(context: Context) : View(context) {
             circlePaint.color = Color.parseColor("#FF00FF")
             canvas.drawCircle(point.x, point.y, 15f, circlePaint)
         }
+
+        statusText?.let { text ->
+            var y = height - 50f
+            val lines = text.split("\n")
+            for (line in lines) {
+                canvas.drawText(line, 20f, y, statusPaint)
+                y += 40f
+            }
+        }
     }
 
     fun updateAimingData(
@@ -89,10 +134,16 @@ class OverlayView(context: Context) : View(context) {
         lines: List<AimLine>,
         predictions: List<PredictionPath>
     ) {
+        showTestPattern = false
         templateCenter = center
         aimPoint = aim
         aimLines = lines
         predictionPaths = predictions
+        if (center != null && aim != null) {
+            statusText = "已检测到目标"
+        } else {
+            statusText = "检测中..."
+        }
         invalidate()
     }
 
@@ -101,6 +152,7 @@ class OverlayView(context: Context) : View(context) {
         aimPoint = null
         aimLines = emptyList()
         predictionPaths = emptyList()
+        statusText = "未检测到目标"
         invalidate()
     }
 }

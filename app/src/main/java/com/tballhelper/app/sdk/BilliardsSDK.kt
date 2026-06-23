@@ -36,78 +36,96 @@ class BilliardsSDK {
             }
         }
 
-        result.templateCenter = findCueBall(pixels, w, h)
-        result.templateCenter?.let { center ->
-            val aimPoint = findAimDirection(pixels, w, h, center)
+        val tableTop = findTableTop(pixels, w, h)
+        val searchTop = if (tableTop > 0) tableTop else h / 3
+        val searchBottom = h - 100
+
+        val cueBall = findCueBall(pixels, w, h, searchTop, searchBottom)
+        if (cueBall != null) {
+            result.templateCenter = cueBall
+            val aimPoint = findAimTarget(pixels, w, h, cueBall)
             if (aimPoint.x > 0 && aimPoint.y > 0) {
                 result.aimPoint = aimPoint
-            } else {
-                result.aimPoint = findNearestColoredBall(pixels, w, h, center)
             }
+            result.confidence = 0.7f
+            return result
+        }
+
+        val anyWhiteBall = findAnyWhiteRegion(pixels, w, h)
+        if (anyWhiteBall != null) {
+            result.templateCenter = anyWhiteBall
+            val aimPoint = findAimTarget(pixels, w, h, anyWhiteBall)
+            if (aimPoint.x > 0 && aimPoint.y > 0) {
+                result.aimPoint = aimPoint
+            }
+            result.confidence = 0.5f
         }
 
         return result
     }
 
-    private fun findCueBall(pixels: IntArray, w: Int, h: Int): PointF? {
-        val searchTop = h / 2
+    private fun findTableTop(pixels: IntArray, w: Int, h: Int): Int {
+        val sampleCols = listOf(w / 4, w / 2, 3 * w / 4)
+        for (y in 50 until h / 2) {
+            var greenCount = 0
+            for (col in sampleCols) {
+                val c = pixels[y * w + col]
+                val r = Color.red(c)
+                val g = Color.green(c)
+                val b = Color.blue(c)
+                if (g > 60 && g - r > 10 && g - b > 10) greenCount++
+            }
+            if (greenCount >= 2) return y
+        }
+        return -1
+    }
+
+    private fun findCueBall(pixels: IntArray, w: Int, h: Int, searchTop: Int, searchBottom: Int): PointF? {
         var bestScore = 0f
         var bestX = -1
         var bestY = -1
-        val minR = 10
-        val maxR = 40
 
-        for (y in searchTop until h step 4) {
-            for (x in 0 until w step 4) {
+        for (y in searchTop until searchBottom step 3) {
+            for (x in 0 until w step 3) {
                 val c = pixels[y * w + x]
                 val r = Color.red(c)
                 val g = Color.green(c)
                 val b = Color.blue(c)
-                if (r + g + b > 600) {
-                    val radius = estimateWhiteCircleRadius(pixels, w, h, x, y, maxR)
-                    if (radius in minR..maxR) {
-                        val score = radius.toFloat() * ((r + g + b) / 765f)
-                        if (score > bestScore) {
-                            val cy = y + radius
-                            val cx = x
-                            if (cy in 0 until h && cx in 0 until w) {
-                                val centerColor = pixels[cy * w + cx]
-                                val cr = Color.red(centerColor)
-                                val cg = Color.green(centerColor)
-                                val cb = Color.blue(centerColor)
-                                if (cr > 180 && cg > 180 && cb > 180 && cr + cb + cg > 300) {
-                                    bestScore = score
-                                    bestX = cx
-                                    bestY = cy
-                                } else {
-                                    val lowerY = y + radius * 2
-                                    if (lowerY < h) {
-                                        val lc = pixels[lowerY * w + cx]
-                                        if (isGreenPixel(lc)) {
-                                            bestScore = score
-                                            bestX = cx
-                                            bestY = cy
-                                        }
-                                    }
+                val brightness = r + g + b
+
+                if (brightness > 600) {
+                    var whiteCount = 0
+                    var totalCount = 0
+                    val radius = 20
+                    for (dy in -radius..radius step 2) {
+                        for (dx in -radius..radius step 2) {
+                            val dist = sqrt((dx * dx + dy * dy).toFloat())
+                            if (dist > radius) continue
+                            val px = x + dx
+                            val py = y + dy
+                            if (px in 0 until w && py in 0 until h) {
+                                val pc = pixels[py * w + px]
+                                if (Color.red(pc) > 180 && Color.green(pc) > 180 && Color.blue(pc) > 180) {
+                                    whiteCount++
                                 }
+                                totalCount++
                             }
                         }
                     }
-                }
-            }
-        }
-
-        if (bestX == -1) {
-            for (y in searchTop until h step 3) {
-                for (x in 0 until w step 3) {
-                    val c = pixels[y * w + x]
-                    val r = Color.red(c)
-                    val g = Color.green(c)
-                    val b = Color.blue(c)
-                    if (r > 200 && g > 200 && b > 200 && abs(r - g) < 30 && abs(g - b) < 30) {
-                        val whiteCount = countWhitePixelsAround(pixels, w, h, x, y, 30)
-                        if (whiteCount > 200 && whiteCount > bestScore) {
-                            bestScore = whiteCount.toFloat()
+                    val whiteRatio = if (totalCount > 0) whiteCount.toFloat() / totalCount else 0f
+                    if (whiteRatio > 0.6f) {
+                        val yBelow = y + radius * 2
+                        if (yBelow < h) {
+                            val bc = pixels[yBelow * w + x]
+                            val br = Color.red(bc)
+                            val bg = Color.green(bc)
+                            val bb = Color.blue(bc)
+                            if (bg > 60 && bg - br > 5 && bg - bb > 5) {
+                                whiteRatio += 0.3f
+                            }
+                        }
+                        if (whiteRatio > bestScore) {
+                            bestScore = whiteRatio
                             bestX = x
                             bestY = y
                         }
@@ -116,139 +134,99 @@ class BilliardsSDK {
             }
         }
 
-        return if (bestX >= 0 && bestY >= 0) PointF(bestX.toFloat(), bestY.toFloat()) else null
+        return if (bestX >= 0) PointF(bestX.toFloat(), bestY.toFloat()) else null
     }
 
-    private fun estimateWhiteCircleRadius(pixels: IntArray, w: Int, h: Int, cx: Int, cy: Int, maxR: Int): Int {
-        for (r in 1..maxR) {
-            val checkX = cx + r
-            if (checkX >= w) return r - 1
-            val c = pixels[cy * w + checkX]
-            if (Color.red(c) + Color.green(c) + Color.blue(c) < 450) return r - 1
-        }
-        return maxR
-    }
+    private fun findAnyWhiteRegion(pixels: IntArray, w: Int, h: Int): PointF? {
+        var bestScore = 0f
+        var bestX = -1
+        var bestY = -1
+        val centerX = w / 2
 
-    private fun countWhitePixelsAround(pixels: IntArray, w: Int, h: Int, cx: Int, cy: Int, radius: Int): Int {
-        var count = 0
-        val x0 = maxOf(0, cx - radius)
-        val x1 = minOf(w - 1, cx + radius)
-        val y0 = maxOf(0, cy - radius)
-        val y1 = minOf(h - 1, cy + radius)
-        for (y in y0..y1 step 2) {
-            for (x in x0..x1 step 2) {
-                val c = pixels[y * w + x]
-                if (Color.red(c) > 200 && Color.green(c) > 200 && Color.blue(c) > 200) {
-                    count++
-                }
-            }
-        }
-        return count
-    }
-
-    private fun findAimDirection(pixels: IntArray, w: Int, h: Int, center: PointF): PointF {
-        val cx = center.x.toInt()
-        val cy = center.y.toInt()
-        val searchRadius = 300
-
-        val brightPixels = mutableListOf<PointF>()
-        val x0 = maxOf(0, cx - searchRadius)
-        val x1 = minOf(w - 1, cx + searchRadius)
-        val y0 = maxOf(0, cy - searchRadius)
-        val y1 = minOf(h - 1, cy + searchRadius)
-
-        for (y in y0..y1 step 2) {
-            for (x in x0..x1 step 2) {
+        for (y in h / 3 until h * 3 / 4 step 4) {
+            for (x in 0 until w step 4) {
                 val c = pixels[y * w + x]
                 val r = Color.red(c)
                 val g = Color.green(c)
                 val b = Color.blue(c)
-                if (r > 220 && g > 100 && g < 200 && b > 100 && b < 200) {
-                    val dx = x - cx
-                    val dy = y - cy
-                    if (dx * dx + dy * dy > 100) {
-                        brightPixels.add(PointF(x.toFloat(), y.toFloat()))
-                    }
-                }
-            }
-        }
-
-        if (brightPixels.size > 10) {
-            var sumX = 0f
-            var sumY = 0f
-            for (p in brightPixels) {
-                sumX += p.x
-                sumY += p.y
-            }
-            return PointF(sumX / brightPixels.size, sumY / brightPixels.size)
-        }
-
-        for (y in y0..y1 step 2) {
-            for (x in x0..x1 step 2) {
-                val c = pixels[y * w + x]
-                val r = Color.red(c)
-                val g = Color.green(c)
-                val b = Color.blue(c)
-                if (r > 200 && g > 200 && b > 200 && abs(r - g) < 30) {
-                    val dx = x - cx
-                    val dy = y - cy
-                    if (dx * dx + dy * dy > 100 && dy < 0) {
-                        brightPixels.add(PointF(x.toFloat(), y.toFloat()))
-                    }
-                }
-            }
-        }
-
-        return if (brightPixels.size > 5) {
-            var sumX = 0f
-            var sumY = 0f
-            for (p in brightPixels) {
-                sumX += p.x
-                sumY += p.y
-            }
-            PointF(sumX / brightPixels.size, sumY / brightPixels.size)
-        } else PointF(-1f, -1f)
-    }
-
-    private fun findNearestColoredBall(pixels: IntArray, w: Int, h: Int, center: PointF): PointF {
-        val cx = center.x.toInt()
-        val cy = center.y.toInt()
-        val searchRadius = 500
-        var nearestDist = Float.MAX_VALUE
-        var nearestX = -1
-        var nearestY = -1
-
-        val x0 = maxOf(0, cx - searchRadius)
-        val x1 = minOf(w - 1, cx + searchRadius)
-        val y0 = maxOf(0, cy - searchRadius)
-        val y1 = minOf(h - 1, cy + searchRadius)
-
-        for (y in y0..y1 step 2) {
-            for (x in x0..x1 step 2) {
-                val c = pixels[y * w + x]
-                val r = Color.red(c).toFloat()
-                val g = Color.green(c).toFloat()
-                val b = Color.blue(c).toFloat()
                 val total = r + g + b
-                if (total > 100 && total < 650) {
-                    val maxC = maxOf(r, g, b)
-                    val minC = minOf(r, g, b)
-                    val saturation = (maxC - minC) / maxOf(maxC, 1f)
-                    if (saturation > 0.15f) {
-                        val dx = x - cx
-                        val dy = y - cy
-                        val dist = sqrt((dx * dx + dy * dy).toFloat())
-                        if (dist > 30 && dist < nearestDist) {
-                            nearestDist = dist
-                            nearestX = x
-                            nearestY = y
+                if (total > 550) {
+                    var count = 0
+                    for (dy in -20..20 step 2) {
+                        for (dx in -20..20 step 2) {
+                            val px = x + dx
+                            val py = y + dy
+                            if (px in 0 until w && py in 0 until h) {
+                                val pc = pixels[py * w + px]
+                                if (Color.red(pc) > 160 && Color.green(pc) > 160 && Color.blue(pc) > 160) {
+                                    count++
+                                }
+                            }
+                        }
+                    }
+                    if (count > 150) {
+                        val score = count.toFloat()
+                        if (score > bestScore) {
+                            bestScore = score
+                            bestX = x
+                            bestY = y
                         }
                     }
                 }
             }
         }
 
-        return if (nearestX >= 0 && nearestY >= 0) PointF(nearestX.toFloat(), nearestY.toFloat()) else PointF(-1f, -1f)
+        return if (bestX >= 0) PointF(bestX.toFloat(), bestY.toFloat()) else null
+    }
+
+    private fun findAimTarget(pixels: IntArray, w: Int, h: Int, cueBall: PointF): PointF {
+        val cx = cueBall.x.toInt()
+        val cy = cueBall.y.toInt()
+        val searchRadius = 400
+
+        val targetPixels = mutableListOf<PointF>()
+        val x0 = maxOf(0, cx - searchRadius)
+        val x1 = minOf(w - 1, cx + searchRadius)
+        val y0 = maxOf(0, cy - searchRadius)
+        val y1 = minOf(h - 1, cy)
+
+        for (y in y0..y1 step 2) {
+            for (x in x0..x1 step 2) {
+                val c = pixels[y * w + x]
+                val r = Color.red(c)
+                val g = Color.green(c)
+                val b = Color.blue(c)
+                val total = r + g + b
+                val dx = x - cx
+                val dy = y - cy
+                val dist = sqrt((dx * dx + dy * dy).toFloat())
+
+                if (dist > 30 && total > 100 && total < 650) {
+                    val maxC = maxOf(r, g, b)
+                    val minC = minOf(r, g, b)
+                    val saturation = if (maxC > 0) (maxC - minC) / maxC.toFloat() else 0f
+                    if (saturation > 0.15f || (r > 200 && g > 200 && b > 200)) {
+                        targetPixels.add(PointF(x.toFloat(), y.toFloat()))
+                    }
+                }
+            }
+        }
+
+        if (targetPixels.size > 5) {
+            targetPixels.sortBy { p ->
+                sqrt((p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy))
+            }
+            var sumX = 0f
+            var sumY = 0f
+            val topN = minOf(20, targetPixels.size)
+            for (i in 0 until topN) {
+                sumX += targetPixels[i].x
+                sumY += targetPixels[i].y
+            }
+            return PointF(sumX / topN, sumY / topN)
+        }
+
+        return PointF(-1f, -1f)
     }
 
     private fun findAimLineEnd(pixels: IntArray, w: Int, h: Int, center: PointF): PointF {
@@ -296,7 +274,7 @@ class BilliardsSDK {
         val tmplPixels = IntArray(tmplWidth * tmplHeight)
         template.getPixels(tmplPixels, 0, tmplWidth, 0, 0, tmplWidth, tmplHeight)
 
-        var bestMatch = 0.75f
+        var bestMatch = 0.7f
         var bestX = 0
         var bestY = 0
 
@@ -311,7 +289,7 @@ class BilliardsSDK {
             }
         }
 
-        if (bestMatch < 0.75f) return null
+        if (bestMatch < 0.7f) return null
 
         for (dy in -20..20 step 5) {
             for (dx in -20..20 step 5) {
@@ -345,36 +323,31 @@ class BilliardsSDK {
             for (tx in 0 until tmplWidth step 3) {
                 val sx = centerX - halfW + tx
                 val sy = centerY - halfH + ty
-                val screenIdx = sy * screenWidth + sx
-                val tmplIdx = ty * tmplWidth + tx
-                if (screenIdx in screenPixels.indices && tmplIdx in tmplPixels.indices) {
-                    if (isSimilarColor(tmplPixels[tmplIdx], screenPixels[screenIdx])) matchCount++
-                    totalCount++
+                if (sx in 0 until screenWidth && sy >= 0) {
+                    val screenIdx = sy * screenWidth + sx
+                    val tmplIdx = ty * tmplWidth + tx
+                    if (screenIdx in screenPixels.indices && tmplIdx in tmplPixels.indices) {
+                        if (isSimilarColor(tmplPixels[tmplIdx], screenPixels[screenIdx])) matchCount++
+                        totalCount++
+                    }
                 }
             }
         }
         return if (totalCount > 0) matchCount.toFloat() / totalCount else 0f
     }
 
-    private fun isGreenPixel(c: Int): Boolean {
-        val r = Color.red(c)
-        val g = Color.green(c)
-        val b = Color.blue(c)
-        return g > 80 && g > r + 15 && g > b + 15
-    }
-
     private fun isSimilarColor(c1: Int, c2: Int): Boolean {
         val diff = abs(Color.red(c1) - Color.red(c2)) +
             abs(Color.green(c1) - Color.green(c2)) +
             abs(Color.blue(c1) - Color.blue(c2))
-        return diff < 80
+        return diff < 100
     }
 
     private fun isWhitePixel(color: Int): Boolean {
         val r = Color.red(color)
         val g = Color.green(color)
         val b = Color.blue(color)
-        return r > 200 && g > 200 && b > 200 && abs(r - g) < 30 && abs(g - b) < 30
+        return r > 200 && g > 200 && b > 200
     }
 
     class ProcessingResult {
